@@ -433,7 +433,7 @@ function recordPathWithCategory(recordPath, category, lists) {
   const cleanName = filename.replace(/^(?:1 — В очереди|2 — Архив) — /, '');
   const parts = cleanName.split(' — ');
   if (parts.length < 3) return recordPath;
-  parts[1] = categoryLabel(lists, category);
+  parts[1] = filenamePart(categoryLabel(lists, category));
   const updated = `${pending ? RECORD_PENDING_PREFIX : archived ? RECORD_ARCHIVED_PREFIX : ''}${parts.join(' — ')}`;
   return `${directory}${updated}.md`;
 }
@@ -899,18 +899,27 @@ module.exports = class FinanceCapturePlugin extends Plugin {
 
   async refreshMobileLists() {
     const file = this.app.vault.getAbstractFileByPath(this.listsPath());
-    if (!file) { this.captureLists = normalizeMobileLists(null); await this.syncCardCategoryEmojis(); this.refreshCaptureForms(); return false; }
-    try {
-      this.captureLists = normalizeMobileLists(JSON.parse(await (this.app.vault.read ? this.app.vault.read(file) : this.app.vault.cachedRead(file))));
-      await this.syncCardCategoryEmojis();
+    if (!file) {
+      this.captureLists = normalizeMobileLists(null);
+      try { await this.syncCardCategoryEmojis(); }
+      catch { new Notice('Справочники недоступны, имена карточек не обновлены.'); }
       this.refreshCaptureForms();
-      return true;
+      return false;
+    }
+    let lists;
+    try {
+      lists = normalizeMobileLists(JSON.parse(await (this.app.vault.read ? this.app.vault.read(file) : this.app.vault.cachedRead(file))));
     } catch (error) {
       new Notice(`Справочники не приняты: ${error.message}`);
       this.captureLists = normalizeMobileLists(null);
       this.refreshCaptureForms();
       return false;
     }
+    this.captureLists = lists;
+    try { await this.syncCardCategoryEmojis(); }
+    catch { new Notice('Справочники приняты, но имена карточек не обновлены.'); }
+    this.refreshCaptureForms();
+    return true;
   }
 
   refreshCaptureForms() {
