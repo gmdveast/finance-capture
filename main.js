@@ -549,6 +549,11 @@ function validBalanceForecastOperation(event, id) {
 function formatSnapshotDate(value, locale, includeTime = false) {
   const date = new Date(includeTime ? value : `${value}T00:00:00.000Z`);
   if (Number.isNaN(date.valueOf())) return value;
+  if (resolveLocale(locale) === 'en') {
+    return new Intl.DateTimeFormat('en', includeTime
+      ? { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }
+      : { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(date);
+  }
   return new Intl.DateTimeFormat(resolveLocale(locale), includeTime
     ? { dateStyle: 'short', timeStyle: 'short' }
     : { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
