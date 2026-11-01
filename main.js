@@ -1,4 +1,4 @@
-const { MarkdownRenderChild, Modal, Notice, Plugin, PluginSettingTab, Setting, normalizePath } = require('obsidian');
+const { MarkdownRenderChild, Modal, Notice, Plugin, PluginSettingTab, Setting, moment, normalizePath } = require('obsidian');
 
 // BEGIN GENERATED INPUT VALIDATION
 class InputError extends Error {
@@ -45,24 +45,275 @@ function rowId(value, { optional = false, max = 104, min = 5 } = {}) {
 }
 // END GENERATED INPUT VALIDATION
 
-function amountInputParts(value, decimalPointIndex = -1, dotsAsGroups = false) {
+const UI_TEXT = {
+  en: {
+    'settings.language': 'Language',
+    'language.system': 'Use Obsidian language', 'language.en': 'English', 'language.ru': 'Russian',
+    'language.description': 'Choose the language used in Finance Capture.',
+    'language.reload': 'Open panels update now. Reload the plugin to update ribbon and command names.',
+    'balance.title': 'Account balances',
+    'balance.invalidSnapshot': 'Could not read the latest update. Showing the last valid snapshot.',
+    'balance.noSnapshotInvalid': 'The balance file is invalid. Wait for sync to finish, then try again.',
+    'balance.noSnapshot': 'Balances have not synced yet. Wait for a snapshot from Finance desktop.',
+    'balance.queueInvalid': 'Could not check the queue. Current balances are shown; the forecast is unavailable.',
+    'balance.asOf': 'Data as of {date} · snapshot created {created}',
+    'balance.queueCount': 'Included from queue: {operations}.',
+    'balance.skipped': 'Skipped queue items: {count}. Check their JSON and selected accounts.',
+    'balance.noAccounts': 'There are no active accounts.', 'balance.now': 'Current',
+    'balance.change': 'Expected change', 'balance.projected': 'Expected balance',
+    'balance.totalUnavailable': 'The total in RUB is not available yet.{missing}',
+    'balance.missingRates': ' Missing rates: {currencies}.', 'balance.total': 'Snapshot total',
+    'capture.title': 'New financial transaction',
+    'capture.inlineHint': 'The transaction is saved in this vault and sent through Syncthing.',
+    'capture.type': 'Type', 'type.income': 'Income', 'type.expense': 'Expense', 'type.transfer': 'Transfer',
+    'capture.creditAccount': 'Account to credit', 'capture.debitAccount': 'Account to debit',
+    'capture.accountCurrency': 'Currency comes from the account settings.',
+    'capture.syncAccountsFirst': 'Sync accounts from Finance desktop first.',
+    'capture.noAccounts': 'No synced accounts', 'capture.destinationAccount': 'Destination account',
+    'capture.spent': 'Spent', 'capture.amount': 'Amount', 'capture.currency': 'Currency',
+    'capture.chooseAccount': 'Choose an account', 'capture.credited': 'Credited',
+    'capture.sameCurrency': 'For the same currency, this must equal the amount spent.',
+    'capture.amountPlaceholder': '0.00',
+    'capture.category': 'Category', 'capture.date': 'Date', 'capture.pickDate': 'Choose date',
+    'capture.dateFormat': 'YYYY-MM-DD', 'capture.necessity': 'Priority', 'necessity.required': 'Essential',
+    'necessity.flexible': 'Flexible', 'capture.note': 'Note', 'capture.save': 'Save transaction',
+    'capture.amountPositive': 'Enter an amount greater than zero.',
+    'capture.dateInvalid': 'Enter a valid date in {format}, or choose it from the calendar.',
+    'capture.dateMissing': 'Enter a date.', 'capture.accountRequired': 'Choose a synced account.',
+    'capture.destinationRequired': 'Choose a different destination account.',
+    'capture.creditedRequired': 'Enter the credited amount.', 'capture.saving': 'Saving…',
+    'capture.savedReady': 'Transaction saved. The form is ready for another one.',
+    'capture.listsUpdated': 'Account list updated from Finance desktop.',
+    'capture.saveFailed': 'Could not save the transaction. Check synced data and try again.',
+    'manager.title': 'Manage mobile transactions',
+    'manager.hint': 'This panel only removes Finance Capture cards and pending JSON files.',
+    'manager.archived': 'Archived records',
+    'manager.archivedDesc': 'Cards without a queued JSON file. An archived card alone does not confirm import; check its receipt status.',
+    'manager.deleteArchived': 'Delete archived records',
+    'manager.confirmArchived': 'Delete {count} archived cards?',
+    'manager.deletedArchived': 'Deleted archived cards: {count}.',
+    'manager.all': 'All records',
+    'manager.allDesc': 'All transaction cards and pending JSON files. Imported rows in Excel are not deleted.',
+    'manager.deleteAll': 'Delete all records',
+    'manager.confirmAll': 'Delete {cards} cards and {json} pending JSON files? This cannot be undone.',
+    'manager.deletedAll': 'Deleted cards: {cards}; JSON files: {json}.',
+    'settings.title': 'Finance Capture', 'settings.author': 'Author',
+    'settings.authorDesc': 'Use Latin letters, numbers, periods, hyphens, or underscores.',
+    'settings.syncRoot': 'Syncthing folder in vault',
+    'settings.syncRootDesc': 'Root folder. JSON files go into incoming; cards go into a separate subfolder.',
+    'settings.recordsFolder': 'Card subfolder',
+    'settings.recordsFolderDesc': 'Path inside the Syncthing folder, for example operations.',
+    'commands.add': 'Add financial transaction',
+    'commands.insertCapture': 'Insert transaction capture panel in note',
+    'commands.insertManager': 'Insert mobile transaction manager in note',
+    'commands.insertBalances': 'Insert account balances panel in note',
+    'commands.status': 'Show mobile transaction status',
+    'status.message': 'Waiting to import: {operations}. Receipts received: {receipts}.',
+    'error.background': 'Finance Capture could not complete a background update. Check that the vault is writable.',
+    'error.listsUnavailable': 'Synced lists are unavailable. Account names on cards were not updated.',
+    'error.listsInvalid': 'Synced lists were rejected. Check the Finance desktop version and sync status.',
+    'error.listsNotUpdated': 'Lists were accepted, but card names were not updated.',
+    'error.cardSettings': 'The card was created, but its link could not be saved in plugin settings.',
+    'error.cardCreate': 'The transaction was saved, but its card could not be created.',
+    'notice.saved': 'Transaction and card saved in the vault.',
+    'notice.cardDeleted': 'Card deleted. The pending transaction was cancelled.',
+    'error.cardStatus': 'Could not update Finance Capture card statuses.',
+    'error.invalidInput': 'Some transaction data is invalid. Check the fields and synced lists.',
+    'card.info': 'Transaction card',
+    'card.readonly': 'This is a read-only view. Editing this note does not change the JSON file or Excel.',
+    'card.field': 'Field', 'card.value': 'Value',
+    'card.date': 'Date', 'card.type': 'Type', 'card.amount': 'Amount', 'card.account': 'Account',
+    'card.destinationAccount': 'Destination account', 'card.credited': 'Credited',
+    'card.category': 'Category', 'card.necessity': 'Priority', 'card.note': 'Note', 'card.id': 'ID',
+    'card.deleteHint': 'Deleting this note cancels the transaction only while it is still pending.',
+    'card.pending': 'Queued. Import has not been confirmed.',
+    'card.archived': 'Archived: JSON is no longer in the queue. Import has not been confirmed.',
+    'card.imported': 'Import confirmed by desktop at {date}.',
+    'card.importedPending': 'Import confirmed by desktop at {date}. The JSON file is still syncing.',
+    'card.discarded': 'Discarded by desktop after a reset or restore. It was not added to Excel.',
+    'card.importError': 'Desktop could not process this transaction. Check the queue in Finance.',
+    'count.operation': 'operation', 'count.operations': 'operations',
+    'count.operationFew': 'operations', 'count.operationMany': 'operations',
+  },
+  ru: {
+    'settings.language': 'Язык',
+    'language.system': 'Язык Obsidian', 'language.en': 'Английский', 'language.ru': 'Русский',
+    'language.description': 'Выберите язык интерфейса Finance Capture.',
+    'language.reload': 'Открытые панели обновятся сразу. Перезапустите плагин, чтобы обновить названия команд и значка.',
+    'balance.title': 'Общие балансы',
+    'balance.invalidSnapshot': 'Не удалось прочитать обновление. Показан последний корректный снимок.',
+    'balance.noSnapshotInvalid': 'Файл балансов некорректен. Дождитесь завершения синхронизации и попробуйте снова.',
+    'balance.noSnapshot': 'Баланс ещё не синхронизирован. Дождитесь снимка из desktop-приложения.',
+    'balance.queueInvalid': 'Не удалось проверить очередь. Показаны текущие суммы; прогноз временно недоступен.',
+    'balance.asOf': 'Данные на {date} · снимок создан {created}',
+    'balance.queueCount': 'В прогнозе учтено из очереди: {operations}.',
+    'balance.skipped': 'Не учтено записей очереди: {count}. Проверьте их JSON и выбранные счета.',
+    'balance.noAccounts': 'Активных счетов нет.', 'balance.now': 'Сейчас',
+    'balance.change': 'Ожидаемое изменение', 'balance.projected': 'Ожидаемый остаток',
+    'balance.totalUnavailable': 'Общий итог в RUB пока недоступен.{missing}',
+    'balance.missingRates': ' Нет курса: {currencies}.', 'balance.total': 'Общий итог по снимку',
+    'capture.title': 'Новая финансовая операция',
+    'capture.inlineHint': 'Запись сохранится в хранилище и будет передана через Syncthing.',
+    'capture.type': 'Тип', 'type.income': 'Доход', 'type.expense': 'Расход', 'type.transfer': 'Перевод',
+    'capture.creditAccount': 'Счёт зачисления', 'capture.debitAccount': 'Счёт списания',
+    'capture.accountCurrency': 'Валюта берётся из настроек счёта.',
+    'capture.syncAccountsFirst': 'Сначала синхронизируйте счета из desktop-приложения.',
+    'capture.noAccounts': 'Нет синхронизированных счетов', 'capture.destinationAccount': 'Счёт назначения',
+    'capture.spent': 'Списано', 'capture.amount': 'Сумма', 'capture.currency': 'Валюта',
+    'capture.chooseAccount': 'Выберите счёт', 'capture.credited': 'Зачислено',
+    'capture.sameCurrency': 'Для одинаковой валюты сумма должна совпадать со списанием.',
+    'capture.amountPlaceholder': '0,00',
+    'capture.category': 'Категория', 'capture.date': 'Дата', 'capture.pickDate': 'Выбрать дату',
+    'capture.dateFormat': 'ДД.ММ.ГГГГ', 'capture.necessity': 'Необходимость', 'necessity.required': 'Обязательная',
+    'necessity.flexible': 'Гибкая', 'capture.note': 'Заметка', 'capture.save': 'Сохранить операцию',
+    'capture.amountPositive': 'Укажите сумму больше нуля.',
+    'capture.dateInvalid': 'Введите дату в формате {format} или выберите её в календаре.',
+    'capture.dateMissing': 'Укажите дату.', 'capture.accountRequired': 'Выберите синхронизированный счёт.',
+    'capture.destinationRequired': 'Выберите другой счёт назначения.',
+    'capture.creditedRequired': 'Укажите сумму зачисления.', 'capture.saving': 'Сохраняем…',
+    'capture.savedReady': 'Операция сохранена. Форма готова для следующей записи.',
+    'capture.listsUpdated': 'Список счетов обновлён из Excel.',
+    'capture.saveFailed': 'Не удалось сохранить операцию. Проверьте синхронизированные данные и попробуйте снова.',
+    'manager.title': 'Управление мобильными операциями',
+    'manager.hint': 'Панель удаляет только карточки Finance Capture и ожидающие JSON.',
+    'manager.archived': 'Архивные записи',
+    'manager.archivedDesc': 'Карточки без JSON в очереди. Архив сам по себе не подтверждает импорт; проверьте статус квитанции.',
+    'manager.deleteArchived': 'Удалить архивные записи',
+    'manager.confirmArchived': 'Удалить архивные карточки: {count}?',
+    'manager.deletedArchived': 'Удалено архивных карточек: {count}.',
+    'manager.all': 'Все записи',
+    'manager.allDesc': 'Все карточки операций и ожидающие JSON. Импортированные строки в Excel не удаляются.',
+    'manager.deleteAll': 'Удалить все записи',
+    'manager.confirmAll': 'Удалить карточки ({cards}) и ожидающие JSON ({json})? Это действие нельзя отменить.',
+    'manager.deletedAll': 'Удалено карточек: {cards}; JSON: {json}.',
+    'settings.title': 'Finance Capture', 'settings.author': 'Автор',
+    'settings.authorDesc': 'Латинские буквы, цифры, точка, дефис или подчёркивание.',
+    'settings.syncRoot': 'Папка Syncthing в хранилище',
+    'settings.syncRootDesc': 'Корневая папка; JSON попадёт в incoming, карточки — в отдельную подпапку.',
+    'settings.recordsFolder': 'Подпапка карточек',
+    'settings.recordsFolderDesc': 'Путь внутри папки Syncthing, например operations.',
+    'commands.add': 'Добавить финансовую операцию',
+    'commands.insertCapture': 'Вставить панель добавления операции в заметку',
+    'commands.insertManager': 'Вставить панель управления мобильными операциями',
+    'commands.insertBalances': 'Вставить панель общих балансов в заметку',
+    'commands.status': 'Показать статус мобильных операций',
+    'status.message': 'Ожидают импорта: {operations}. Получено квитанций: {receipts}.',
+    'error.background': 'Finance Capture не удалось выполнить фоновое обновление. Проверьте доступ к хранилищу.',
+    'error.listsUnavailable': 'Справочники недоступны, имена карточек не обновлены.',
+    'error.listsInvalid': 'Справочники не приняты. Проверьте версию desktop-приложения и синхронизацию.',
+    'error.listsNotUpdated': 'Справочники приняты, но имена карточек не обновлены.',
+    'error.cardSettings': 'Карточка создана, но её связь не записана в настройках плагина.',
+    'error.cardCreate': 'Операция сохранена, но карточку создать не удалось.',
+    'notice.saved': 'Операция и карточка сохранены на телефоне.',
+    'notice.cardDeleted': 'Карточка удалена, ожидающая операция отменена.',
+    'error.cardStatus': 'Ошибка обновления статусов карточек Finance Capture.',
+    'error.invalidInput': 'Некоторые данные операции некорректны. Проверьте поля и синхронизированные справочники.',
+    'card.info': 'Карточка операции',
+    'card.readonly': 'Это представление только для чтения. Изменения в заметке не меняют JSON или Excel.',
+    'card.field': 'Поле', 'card.value': 'Значение',
+    'card.date': 'Дата', 'card.type': 'Тип', 'card.amount': 'Сумма', 'card.account': 'Счёт',
+    'card.destinationAccount': 'Счёт назначения', 'card.credited': 'Зачислено',
+    'card.category': 'Категория', 'card.necessity': 'Необходимость', 'card.note': 'Заметка', 'card.id': 'ID',
+    'card.deleteHint': 'Удаление этой заметки отменит операцию, только если она ещё находится в очереди импорта.',
+    'card.pending': 'В очереди. Подтверждения обработки пока нет.',
+    'card.archived': 'Архив: JSON отсутствует. Импорт не подтверждён.',
+    'card.imported': 'Импорт подтверждён компьютером: {date}.',
+    'card.importedPending': 'Импорт подтверждён компьютером: {date}. JSON ещё синхронизируется.',
+    'card.discarded': 'Отклонено компьютером после сброса или восстановления. Не добавлено в Excel.',
+    'card.importError': 'Ошибка обработки на компьютере. Проверьте очередь в desktop-приложении.',
+    'count.operation': 'операция', 'count.operations': 'операции',
+    'count.operationFew': 'операции', 'count.operationMany': 'операций',
+  },
+};
+
+function resolveLocale(preference = 'system', systemLocale) {
+  if (preference === 'en' || preference === 'ru') return preference;
+  let detected = systemLocale;
+  if (!detected) {
+    try { detected = moment?.locale?.(); } catch { /* Fall back to the device locale outside Obsidian. */ }
+  }
+  if (!detected) detected = typeof navigator !== 'undefined' ? navigator.language : 'en';
+  return /^ru(?:-|$)/i.test(String(detected)) ? 'ru' : 'en';
+}
+
+function translate(locale, key, values = {}) {
+  const language = resolveLocale(locale);
+  const message = UI_TEXT[language][key] || UI_TEXT.en[key] || key;
+  return message.replace(/\{([\w]+)\}/g, (placeholder, name) => String(values[name] ?? placeholder));
+}
+
+function ui(plugin, key, values) { return translate(plugin?.locale || 'en', key, values); }
+
+function operationTypeLabel(locale, type) {
+  const key = { Доход: 'type.income', Расход: 'type.expense', Перевод: 'type.transfer' }[type];
+  return key ? translate(locale, key) : type;
+}
+
+function necessityLabel(locale, value) {
+  const key = { Обязательная: 'necessity.required', Гибкая: 'necessity.flexible' }[value];
+  return key ? translate(locale, key) : value;
+}
+
+function operationCount(count, locale) {
+  const language = resolveLocale(locale);
+  const plural = new Intl.PluralRules(language).select(count);
+  const key = language === 'ru'
+    ? plural === 'one' ? 'count.operation' : plural === 'few' ? 'count.operationFew' : 'count.operationMany'
+    : plural === 'one' ? 'count.operation' : 'count.operations';
+  return `${new Intl.NumberFormat(language).format(count)} ${translate(language, key)}`;
+}
+
+function dateInputPattern(locale) { return resolveLocale(locale) === 'ru' ? 'ДД.ММ.ГГГГ' : 'YYYY-MM-DD'; }
+
+function formatDateInput(value, locale) {
+  return resolveLocale(locale) === 'ru' ? String(value).split('-').reverse().join('.') : String(value);
+}
+
+function parseDateInput(value, locale) {
+  const language = resolveLocale(locale);
+  const match = language === 'ru'
+    ? String(value).match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+    : String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = language === 'ru' ? `${match[3]}-${match[2]}-${match[1]}` : String(value);
+  return calendarDate(date) ? date : null;
+}
+
+function formatOperationDate(value, locale) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat(resolveLocale(locale), { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+}
+
+function formatTimestamp(value, locale) {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat(resolveLocale(locale), { dateStyle: 'short', timeStyle: 'short' }).format(date);
+}
+
+function amountSeparators(locale = 'ru') {
+  return resolveLocale(locale) === 'ru'
+    ? { group: '.', decimal: ',', alternate: '.' }
+    : { group: ',', decimal: '.', alternate: ',' };
+}
+
+function amountInputParts(value, decimalPointIndex = -1, dotsAsGroups = false, locale = 'ru') {
   let source = String(value ?? '').replace(/[\s\u00a0\u202f]/g, '');
-  if (Number.isInteger(decimalPointIndex) && source[decimalPointIndex] === '.') {
-    source = `${source.slice(0, decimalPointIndex)},${source.slice(decimalPointIndex + 1)}`;
+  const separators = amountSeparators(locale);
+  if (Number.isInteger(decimalPointIndex) && [separators.decimal, separators.alternate].includes(source[decimalPointIndex])) {
+    source = `${source.slice(0, decimalPointIndex)}${separators.decimal}${source.slice(decimalPointIndex + 1)}`;
   }
 
-  let decimalIndex = source.lastIndexOf(',');
+  let decimalIndex = source.lastIndexOf(separators.decimal);
   if (decimalIndex === -1 && !dotsAsGroups) {
-    const dots = [...source.matchAll(/\./g)];
-    if (dots.length === 1) {
-      const dotIndex = dots[0].index;
-      const wholeDigits = source.slice(0, dotIndex).replace(/\D/g, '');
-      const fractionDigits = source.slice(dotIndex + 1).replace(/\D/g, '');
-      // A single dot followed by one or two digits is a pasted decimal value.
-      // The formatter itself always uses groups of three digits after a dot.
+    const alternatives = [...source.matchAll(new RegExp(`\\${separators.alternate}`, 'g'))];
+    if (alternatives.length === 1) {
+      const alternateIndex = alternatives[0].index;
+      const wholeDigits = source.slice(0, alternateIndex).replace(/\D/g, '');
+      const fractionDigits = source.slice(alternateIndex + 1).replace(/\D/g, '');
       if (wholeDigits && fractionDigits.length > 0 && fractionDigits.length < 3) {
-        source = `${source.slice(0, dotIndex)},${source.slice(dotIndex + 1)}`;
-        decimalIndex = dotIndex;
+        source = `${source.slice(0, alternateIndex)}${separators.decimal}${source.slice(alternateIndex + 1)}`;
+        decimalIndex = alternateIndex;
       }
     }
   }
@@ -70,29 +321,30 @@ function amountInputParts(value, decimalPointIndex = -1, dotsAsGroups = false) {
   const hasDecimal = decimalIndex !== -1;
   const whole = (hasDecimal ? source.slice(0, decimalIndex) : source).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
   const fraction = hasDecimal ? source.slice(decimalIndex + 1).replace(/\D/g, '') : '';
-  return { whole, fraction, hasDecimal, normalized: source };
+  return { whole, fraction, hasDecimal, normalized: source, ...separators };
 }
 
-function formatAmountInputValue(value, decimalPointIndex = -1, dotsAsGroups = false) {
-  const { whole, fraction, hasDecimal } = amountInputParts(value, decimalPointIndex, dotsAsGroups);
+function formatAmountInputValue(value, decimalPointIndex = -1, dotsAsGroups = false, locale = 'ru') {
+  const { whole, fraction, hasDecimal, group, decimal } = amountInputParts(value, decimalPointIndex, dotsAsGroups, locale);
   if (!whole && !fraction && !hasDecimal) return '';
-  const integer = (whole || (hasDecimal ? '0' : '')).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `${integer}${hasDecimal ? `,${fraction}` : ''}`;
+  const integer = (whole || (hasDecimal ? '0' : '')).replace(/\B(?=(\d{3})+(?!\d))/g, group);
+  return `${integer}${hasDecimal ? `${decimal}${fraction}` : ''}`;
 }
 
-function parseAmountInputValue(value) {
-  const { whole, fraction, hasDecimal } = amountInputParts(value);
+function parseAmountInputValue(value, locale = 'ru') {
+  const { whole, fraction, hasDecimal } = amountInputParts(value, -1, false, locale);
   const normalized = `${whole || '0'}${hasDecimal ? `.${fraction}` : ''}`;
   return Number(normalized);
 }
 
-function amountInputCaret(value, caret, formatted) {
+function amountInputCaret(value, caret, formatted, locale = 'ru') {
   if (!Number.isInteger(caret)) return formatted.length;
+  const { decimal } = amountSeparators(locale);
   const prefix = value.slice(0, caret);
-  const decimalIndex = prefix.lastIndexOf(',');
+  const decimalIndex = prefix.lastIndexOf(decimal);
   if (decimalIndex !== -1) {
     const fractionDigits = (prefix.slice(decimalIndex + 1).match(/\d/g) || []).length;
-    const formattedDecimalIndex = formatted.indexOf(',');
+    const formattedDecimalIndex = formatted.indexOf(decimal);
     return formattedDecimalIndex === -1 ? formatted.length : formattedDecimalIndex + 1 + fractionDigits;
   }
   const digitCount = (prefix.match(/\d/g) || []).length;
@@ -104,35 +356,41 @@ function amountInputCaret(value, caret, formatted) {
   return formatted.length;
 }
 
-function configureAmountInput(field, value, onChange) {
+function configureAmountInput(field, value, onChange, locale = 'ru') {
   const input = field.inputEl;
   input.type = 'text';
   input.inputMode = 'decimal';
-  input.placeholder = '0,00';
+  input.placeholder = translate(locale, 'capture.amountPlaceholder');
   input.addEventListener?.('input', (event) => {
     if (event.isComposing) return;
     const rawValue = input.value;
     const caret = input.selectionStart;
-    const decimalPointIndex = event.data === '.' && Number.isInteger(caret) ? caret - 1 : -1;
+    const separators = amountSeparators(locale);
+    const isDecimalKey = [separators.decimal, separators.alternate].includes(event.data);
+    const decimalPointIndex = isDecimalKey && Number.isInteger(caret) ? caret - 1 : -1;
     const dotsAsGroups = String(event.inputType || '').startsWith('delete');
-    const formatted = formatAmountInputValue(rawValue, decimalPointIndex, dotsAsGroups);
+    const formatted = formatAmountInputValue(rawValue, decimalPointIndex, dotsAsGroups, locale);
     if (input.value === formatted) return;
-    const nextCaret = amountInputCaret(amountInputParts(rawValue, decimalPointIndex, dotsAsGroups).normalized, caret, formatted);
+    const nextCaret = amountInputCaret(amountInputParts(rawValue, decimalPointIndex, dotsAsGroups, locale).normalized, caret, formatted, locale);
     input.value = formatted;
     if (Number.isInteger(caret)) input.setSelectionRange?.(nextCaret, nextCaret);
   });
-  field.setValue(formatAmountInputValue(value)).onChange(onChange);
+  field.setValue(formatAmountInputValue(value, -1, false, locale)).onChange(onChange);
 }
 
 const DEFAULT_SETTINGS = {
   author: 'owner',
   syncRoot: 'Finance Sync',
   recordsSubfolder: 'operations',
+  language: 'system',
   recordLinks: {},
 };
 
-const RECORD_PENDING_PREFIX = '1 — В очереди — ';
-const RECORD_ARCHIVED_PREFIX = '2 — Архив — ';
+const RECORD_STATUS_PREFIXES = {
+  ru: { pending: '1 — В очереди — ', archived: '2 — Архив — ' },
+  en: { pending: '1 — Pending — ', archived: '2 — Archived — ' },
+};
+const RECORD_STATUS_PREFIX_PATTERN = /^(?:1 — (?:В очереди|Pending)|2 — (?:Архив|Archived)) — /;
 const FALLBACK_CATEGORY_EMOJIS = { 'Жильё и аренда': '🏠', 'Коммунальные услуги': '💡', 'Продукты': '🛒', 'Кафе и доставка': '🍽️', 'Транспорт': '🚕', 'Связь и интернет': '📶', 'Здоровье и аптека': '💊', 'Спорт и зал': '🏋️', 'Бытовые покупки': '🧹', 'Одежда и личное': '👕', 'Подписки и сервисы': '📱', 'Виза и документы': '📄', 'Путешествия': '✈️', 'Развлечения': '🎬', 'Подарки и помощь': '🎁', 'Комиссии и обмен валюты': '💱', 'Прочее': '📦', 'Работа / зарплата': '💼', 'Фриланс / подработки': '💻', 'Возврат / компенсация': '↩️', 'Прочие доходы': '💰' };
 
 const CATEGORIES = {
@@ -235,23 +493,15 @@ function normalizeBalanceSnapshot(payload) {
   };
 }
 
-function formatBalanceAmount(amount, currency) {
-  const formatted = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(amount);
+function formatBalanceAmount(amount, currency, locale = 'ru') {
+  const formatted = new Intl.NumberFormat(resolveLocale(locale), { maximumFractionDigits: 2 }).format(amount);
   return `${formatted}\u00a0${currency}`;
 }
 
-function formatSignedBalanceAmount(amount, currency) {
+function formatSignedBalanceAmount(amount, currency, locale = 'ru') {
   const stableAmount = Math.abs(amount) < 1e-9 ? 0 : amount;
   const sign = stableAmount > 0 ? '+' : stableAmount < 0 ? '−' : '';
-  return `${sign}${formatBalanceAmount(Math.abs(stableAmount), currency)}`;
-}
-
-function operationWord(count) {
-  const lastTwo = count % 100;
-  const last = count % 10;
-  if (last === 1 && lastTwo !== 11) return 'операция';
-  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) return 'операции';
-  return 'операций';
+  return `${sign}${formatBalanceAmount(Math.abs(stableAmount), currency, locale)}`;
 }
 
 function validBalanceForecastOperation(event, id) {
@@ -270,81 +520,83 @@ function validBalanceForecastOperation(event, id) {
   return true;
 }
 
-function formatSnapshotDate(value, includeTime = false) {
-  const date = new Date(value);
+function formatSnapshotDate(value, locale, includeTime = false) {
+  const date = new Date(includeTime ? value : `${value}T00:00:00.000Z`);
   if (Number.isNaN(date.valueOf())) return value;
-  return new Intl.DateTimeFormat('ru-RU', includeTime
+  return new Intl.DateTimeFormat(resolveLocale(locale), includeTime
     ? { dateStyle: 'short', timeStyle: 'short' }
-    : { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+    : { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
 }
 
 function renderBalancesPanel(containerEl, plugin) {
+  const locale = plugin.locale;
   containerEl.empty();
   containerEl.addClass('finance-balances-panel');
-  containerEl.createEl('h3', { text: 'Общие балансы' });
+  containerEl.createEl('h3', { text: ui(plugin, 'balance.title') });
   const snapshot = plugin.balanceSnapshot;
   if (!snapshot) {
     containerEl.createEl('p', {
       cls: 'finance-balances-hint',
-      text: plugin.balanceSnapshotState === 'invalid'
-        ? 'Файл балансов получен, но не прошёл проверку. Попробуйте дождаться завершения синхронизации.'
-        : 'Баланс ещё не синхронизирован. Дождитесь получения снимка из desktop-приложения.',
+      text: ui(plugin, plugin.balanceSnapshotState === 'invalid' ? 'balance.noSnapshotInvalid' : 'balance.noSnapshot'),
     });
     return;
   }
   if (plugin.balanceSnapshotState === 'invalid') {
-    containerEl.createEl('p', { cls: 'finance-balances-warning', text: 'Не удалось прочитать обновление. Показан последний корректный снимок.' });
+    containerEl.createEl('p', { cls: 'finance-balances-warning', text: ui(plugin, 'balance.invalidSnapshot') });
   }
   containerEl.createEl('p', {
     cls: 'finance-balances-updated',
-    text: `Данные на ${formatSnapshotDate(snapshot.asOfDate)} · снимок создан ${formatSnapshotDate(snapshot.generatedAt, true)}`,
+    text: ui(plugin, 'balance.asOf', {
+      date: formatSnapshotDate(snapshot.asOfDate, locale),
+      created: formatSnapshotDate(snapshot.generatedAt, locale, true),
+    }),
   });
   if (plugin.pendingBalanceState === 'invalid') {
-    containerEl.createEl('p', { cls: 'finance-balances-warning', text: 'Не удалось проверить очередь. Показаны текущие суммы; прогноз временно недоступен.' });
+    containerEl.createEl('p', { cls: 'finance-balances-warning', text: ui(plugin, 'balance.queueInvalid') });
   } else if (plugin.pendingBalanceState === 'ready') {
     containerEl.createEl('p', {
       cls: 'finance-balances-queue-summary',
-      text: `В прогнозе учтено из очереди: ${plugin.pendingBalanceOperationCount} ${operationWord(plugin.pendingBalanceOperationCount)}.`,
+      text: ui(plugin, 'balance.queueCount', { operations: operationCount(plugin.pendingBalanceOperationCount, locale) }),
     });
     if (plugin.pendingBalanceSkippedCount) {
       containerEl.createEl('p', {
         cls: 'finance-balances-warning',
-        text: `Не учтено записей очереди: ${plugin.pendingBalanceSkippedCount}. Проверьте их JSON и выбранные счета.`,
+        text: ui(plugin, 'balance.skipped', { count: new Intl.NumberFormat(locale).format(plugin.pendingBalanceSkippedCount) }),
       });
     }
   }
   if (!snapshot.accounts.length) {
-    containerEl.createEl('p', { cls: 'finance-balances-hint', text: 'Активных счетов нет.' });
+    containerEl.createEl('p', { cls: 'finance-balances-hint', text: ui(plugin, 'balance.noAccounts') });
   }
   const accountList = containerEl.createEl('div', { cls: 'finance-balances-accounts' });
   for (const account of snapshot.accounts) {
     const row = accountList.createEl('div', { cls: 'finance-balances-account' });
     const heading = row.createEl('div', { cls: 'finance-balances-account-heading' });
     heading.createEl('span', { cls: 'finance-balances-name', text: account.name });
-    heading.createEl('span', { cls: 'finance-balances-amount', text: `Сейчас: ${formatBalanceAmount(account.balance, account.currency)}` });
+    heading.createEl('span', { cls: 'finance-balances-amount', text: `${ui(plugin, 'balance.now')}: ${formatBalanceAmount(account.balance, account.currency, locale)}` });
     if (plugin.pendingBalanceState === 'ready') {
       const change = plugin.pendingBalanceChanges.get(account.id) || 0;
       const forecast = row.createEl('div', { cls: 'finance-balances-account-forecast' });
-      forecast.createEl('span', { cls: 'finance-balances-forecast-label', text: 'Ожидаемое изменение' });
+      forecast.createEl('span', { cls: 'finance-balances-forecast-label', text: ui(plugin, 'balance.change') });
       forecast.createEl('span', {
         cls: 'finance-balances-forecast-change',
-        text: formatSignedBalanceAmount(change, account.currency),
+        text: formatSignedBalanceAmount(change, account.currency, locale),
       });
-      forecast.createEl('span', { cls: 'finance-balances-forecast-label', text: 'Ожидаемый остаток' });
+      forecast.createEl('span', { cls: 'finance-balances-forecast-label', text: ui(plugin, 'balance.projected') });
       const projectedBalance = account.balance + change;
       forecast.createEl('strong', {
         cls: `finance-balances-forecast-total${projectedBalance > 0 ? ' is-positive' : projectedBalance < 0 ? ' is-negative' : ''}`,
-        text: formatBalanceAmount(projectedBalance, account.currency),
+        text: formatBalanceAmount(projectedBalance, account.currency, locale),
       });
     }
   }
   if (snapshot.totalRub === null) {
-    const missing = snapshot.missingRates.length ? ` Нет курса: ${snapshot.missingRates.join(', ')}.` : '';
-    containerEl.createEl('p', { cls: 'finance-balances-total-unavailable', text: `Общий итог в RUB пока недоступен.${missing}` });
+    const missing = snapshot.missingRates.length ? ui(plugin, 'balance.missingRates', { currencies: snapshot.missingRates.join(', ') }) : '';
+    containerEl.createEl('p', { cls: 'finance-balances-total-unavailable', text: ui(plugin, 'balance.totalUnavailable', { missing }) });
   } else {
     const total = containerEl.createEl('div', { cls: 'finance-balances-total' });
-    total.createEl('span', { text: 'Общий итог по снимку' });
-    total.createEl('strong', { text: formatBalanceAmount(snapshot.totalRub, 'RUB') });
+    total.createEl('span', { text: ui(plugin, 'balance.total') });
+    total.createEl('strong', { text: formatBalanceAmount(snapshot.totalRub, 'RUB', locale) });
   }
 }
 
@@ -412,64 +664,65 @@ function recordBaseName(operation, lists) {
   return `${filenamePart(operation.date)} — ${filenamePart(category)} — ${amountForFilename(operation.amount)} ${filenamePart(operation.currency)}`;
 }
 
-function recordNameWithStatus(name, pending) {
-  const cleanName = String(name || '').replace(/^(?:1 — В очереди|2 — Архив) — /, '');
-  return `${pending ? RECORD_PENDING_PREFIX : RECORD_ARCHIVED_PREFIX}${cleanName}`;
+function recordNameWithStatus(name, pending, locale = 'ru') {
+  const cleanName = String(name || '').replace(RECORD_STATUS_PREFIX_PATTERN, '');
+  const prefixes = RECORD_STATUS_PREFIXES[resolveLocale(locale)];
+  return `${pending ? prefixes.pending : prefixes.archived}${cleanName}`;
 }
 
-function recordPathWithStatus(recordPath, pending) {
+function recordPathWithStatus(recordPath, pending, locale = 'ru') {
   const slash = recordPath.lastIndexOf('/');
   const directory = slash >= 0 ? recordPath.slice(0, slash + 1) : '';
   const filename = recordPath.slice(slash + 1).replace(/\.md$/i, '');
-  return `${directory}${recordNameWithStatus(filename, pending)}.md`;
+  return `${directory}${recordNameWithStatus(filename, pending, locale)}.md`;
 }
 
 function recordPathWithCategory(recordPath, category, lists) {
   const slash = recordPath.lastIndexOf('/');
   const directory = slash >= 0 ? recordPath.slice(0, slash + 1) : '';
   const filename = recordPath.slice(slash + 1).replace(/\.md$/i, '');
-  const pending = filename.startsWith(RECORD_PENDING_PREFIX);
-  const archived = filename.startsWith(RECORD_ARCHIVED_PREFIX);
-  const cleanName = filename.replace(/^(?:1 — В очереди|2 — Архив) — /, '');
+  const statusPrefix = filename.match(RECORD_STATUS_PREFIX_PATTERN)?.[0] || '';
+  const cleanName = filename.slice(statusPrefix.length);
   const parts = cleanName.split(' — ');
   if (parts.length < 3) return recordPath;
   parts[1] = filenamePart(categoryLabel(lists, category));
-  const updated = `${pending ? RECORD_PENDING_PREFIX : archived ? RECORD_ARCHIVED_PREFIX : ''}${parts.join(' — ')}`;
+  const updated = `${statusPrefix}${parts.join(' — ')}`;
   return `${directory}${updated}.md`;
 }
 
-function operationMarkdown(event, jsonPath, lists) {
+function operationMarkdown(event, jsonPath, lists, locale = 'ru') {
   const operation = event.operation;
   const accountName = (id) => lists.accounts.find((account) => account.id === Number(id))?.name || `#${id}`;
   const displayedCategory = operation.category ? categoryLabel(lists, operation.category) : '';
-  const title = `${operation.type}: ${displayedCategory || String(operation.notes || '').split(/\r?\n/)[0] || `${accountName(operation.accountId)} → ${accountName(operation.destinationAccountId)}`}`;
+  const title = `${operationTypeLabel(locale, operation.type)}: ${displayedCategory || String(operation.notes || '').split(/\r?\n/)[0] || `${accountName(operation.accountId)} → ${accountName(operation.destinationAccountId)}`}`;
   return `---
 finance_capture: true
 finance_id: ${JSON.stringify(event.id)}
 finance_json: ${JSON.stringify(jsonPath)}
 created_at: ${JSON.stringify(event.createdAt)}
 finance_category: ${JSON.stringify(operation.category || '')}
+finance_locale: ${JSON.stringify(resolveLocale(locale))}
 ---
 
 # ${title}
 
-> [!info] Карточка операции
-> Это представление только для чтения. Изменения в этой заметке не изменяют JSON или Excel.
+> [!info] ${translate(locale, 'card.info')}
+> ${translate(locale, 'card.readonly')}
 
-| Поле | Значение |
+| ${translate(locale, 'card.field')} | ${translate(locale, 'card.value')} |
 | --- | --- |
-| Дата | ${markdownCell(operation.date)} |
-| Тип | ${markdownCell(operation.type)} |
-| Сумма | ${markdownCell(operation.amount)} ${markdownCell(operation.currency)} |
-| Счёт | ${markdownCell(accountName(operation.accountId))} |
-${operation.type === 'Перевод' ? `| Счёт назначения | ${markdownCell(accountName(operation.destinationAccountId))} |
-| Зачислено | ${markdownCell(operation.destinationAmount)} ${markdownCell(lists.accounts.find((account) => account.id === Number(operation.destinationAccountId))?.currency)} |
-` : ''}| Категория | ${markdownCell(displayedCategory)} |
-| Необходимость | ${markdownCell(operation.necessity)} |
-| Заметка | ${markdownCell(operation.notes)} |
-| ID | \`${event.id}\` |
+| ${translate(locale, 'card.date')} | ${markdownCell(formatOperationDate(operation.date, locale))} |
+| ${translate(locale, 'card.type')} | ${markdownCell(operationTypeLabel(locale, operation.type))} |
+| ${translate(locale, 'card.amount')} | ${markdownCell(formatBalanceAmount(operation.amount, operation.currency, locale))} |
+| ${translate(locale, 'card.account')} | ${markdownCell(accountName(operation.accountId))} |
+${operation.type === 'Перевод' ? `| ${translate(locale, 'card.destinationAccount')} | ${markdownCell(accountName(operation.destinationAccountId))} |
+| ${translate(locale, 'card.credited')} | ${markdownCell(formatBalanceAmount(operation.destinationAmount, lists.accounts.find((account) => account.id === Number(operation.destinationAccountId))?.currency || operation.currency, locale))} |
+` : ''}| ${translate(locale, 'card.category')} | ${markdownCell(displayedCategory)} |
+| ${translate(locale, 'card.necessity')} | ${markdownCell(necessityLabel(locale, operation.necessity))} |
+| ${translate(locale, 'card.note')} | ${markdownCell(operation.notes)} |
+| ${translate(locale, 'card.id')} | \`${event.id}\` |
 
-Удаление этой заметки отменит операцию, только если она ещё находится в очереди импорта.
+${translate(locale, 'card.deleteHint')}
 `;
 }
 
@@ -481,7 +734,8 @@ function frontmatterValue(markdown, key) {
 
 function renderCaptureForm(containerEl, plugin, options = {}) {
   let operation = defaultOperation(plugin);
-  const render = (message = '') => {
+  const render = (messageKey = '', values = {}) => {
+    const locale = plugin.locale;
     const lists = plugin.captureLists;
     if (!lists.accounts.some((account) => account.id === Number(operation.accountId))) {
       operation.accountId = lists.accounts[0]?.id || '';
@@ -492,16 +746,16 @@ function renderCaptureForm(containerEl, plugin, options = {}) {
     }
     containerEl.empty();
     containerEl.addClass(options.inline ? 'finance-capture-panel' : 'finance-capture-modal');
-    containerEl.createEl(options.inline ? 'h3' : 'h2', { text: 'Новая финансовая операция' });
-    if (options.inline) containerEl.createEl('p', { cls: 'finance-capture-panel-hint', text: 'Запись сохранится локально и будет передана через Syncthing.' });
-    if (message) containerEl.createEl('div', { cls: 'finance-capture-success', text: message });
+    containerEl.createEl(options.inline ? 'h3' : 'h2', { text: ui(plugin, 'capture.title') });
+    if (options.inline) containerEl.createEl('p', { cls: 'finance-capture-panel-hint', text: ui(plugin, 'capture.inlineHint') });
+    if (messageKey) containerEl.createEl('div', { cls: 'finance-capture-success', text: ui(plugin, messageKey, values) });
 
-    new Setting(containerEl).setName('Тип').addDropdown((field) => {
-      lists.operationTypes.forEach((type) => field.addOption(type, type));
+    new Setting(containerEl).setName(ui(plugin, 'capture.type')).addDropdown((field) => {
+      lists.operationTypes.forEach((type) => field.addOption(type, operationTypeLabel(locale, type)));
       field.setValue(operation.type).onChange((value) => { operation.type = value; operation.category = lists.categories[value]?.[0] || ''; render(); });
     });
-    new Setting(containerEl).setName(operation.type === 'Доход' ? 'Счёт зачисления' : 'Счёт списания').setDesc(lists.accounts.length ? 'Валюта берётся из настроек счёта.' : 'Сначала синхронизируйте список счетов из desktop-приложения.').addDropdown((field) => {
-      if (!lists.accounts.length) field.addOption('', 'Нет синхронизированных счетов');
+    new Setting(containerEl).setName(ui(plugin, operation.type === 'Доход' ? 'capture.creditAccount' : 'capture.debitAccount')).setDesc(lists.accounts.length ? ui(plugin, 'capture.accountCurrency') : ui(plugin, 'capture.syncAccountsFirst')).addDropdown((field) => {
+      if (!lists.accounts.length) field.addOption('', ui(plugin, 'capture.noAccounts'));
       lists.accounts.forEach((account) => field.addOption(String(account.id), `${account.name} · ${account.currency}`));
       field.setValue(String(operation.accountId || '')).onChange((value) => {
         operation.accountId = Number(value) || '';
@@ -510,63 +764,60 @@ function renderCaptureForm(containerEl, plugin, options = {}) {
       });
     });
     if (operation.type === 'Перевод') {
-      new Setting(containerEl).setName('Счёт назначения').addDropdown((field) => {
+      new Setting(containerEl).setName(ui(plugin, 'capture.destinationAccount')).addDropdown((field) => {
         lists.accounts.filter((account) => account.id !== operation.accountId).forEach((account) => field.addOption(String(account.id), `${account.name} · ${account.currency}`));
         field.setValue(String(operation.destinationAccountId || '')).onChange((value) => { operation.destinationAccountId = Number(value) || ''; render(); });
       });
     }
     const sameCurrencyTransfer = operation.type === 'Перевод' && lists.accounts.find((account) => account.id === Number(operation.destinationAccountId))?.currency === operation.currency;
     let destinationField;
-    new Setting(containerEl).setName(operation.type === 'Перевод' ? 'Списано' : 'Сумма').addText((field) => {
+    new Setting(containerEl).setName(ui(plugin, operation.type === 'Перевод' ? 'capture.spent' : 'capture.amount')).addText((field) => {
       configureAmountInput(field, operation.amount, (value) => {
         operation.amount = value;
         if (sameCurrencyTransfer) {
           operation.destinationAmount = value;
           destinationField?.setValue(value);
         }
-      });
+      }, locale);
       if (options.focusAmount) window.setTimeout(() => field.inputEl.focus(), 0);
     });
-    if (operation.type !== 'Перевод') new Setting(containerEl).setName('Валюта').setDesc(operation.currency || 'Выберите счёт');
+    if (operation.type !== 'Перевод') new Setting(containerEl).setName(ui(plugin, 'capture.currency')).setDesc(operation.currency || ui(plugin, 'capture.chooseAccount'));
     if (operation.type === 'Перевод') {
-      new Setting(containerEl).setName('Зачислено').setDesc('Для одинаковой валюты равно сумме списания.').addText((field) => {
+      new Setting(containerEl).setName(ui(plugin, 'capture.credited')).setDesc(ui(plugin, 'capture.sameCurrency')).addText((field) => {
         destinationField = field;
         if (sameCurrencyTransfer) operation.destinationAmount = operation.amount;
         field.inputEl.readOnly = sameCurrencyTransfer;
         if (sameCurrencyTransfer) field.inputEl.classList.add('finance-capture-readonly');
-        configureAmountInput(field, operation.destinationAmount, (value) => { operation.destinationAmount = value; });
+        configureAmountInput(field, operation.destinationAmount, (value) => { operation.destinationAmount = value; }, locale);
       });
     } else {
-      new Setting(containerEl).setName('Категория').addDropdown((field) => {
+      new Setting(containerEl).setName(ui(plugin, 'capture.category')).addDropdown((field) => {
         lists.categories[operation.type].forEach((category) => field.addOption(category, categoryLabel(lists, category)));
         field.setValue(operation.category).onChange((value) => { operation.category = value; });
       });
     }
     let dateInput;
     let datePicker;
-    const dateSetting = new Setting(containerEl).setName('Дата');
+    const dateSetting = new Setting(containerEl).setName(ui(plugin, 'capture.date'));
     dateSetting.controlEl.classList.add('finance-capture-date-control');
     dateSetting.addButton((button) => {
-      button.setIcon('calendar-days').setTooltip('Выбрать дату').onClick(() => {
+      button.setIcon('calendar-days').setTooltip(ui(plugin, 'capture.pickDate')).onClick(() => {
         if (!dateInput) return;
         datePicker?.focus();
         try { if (typeof datePicker?.showPicker === 'function') datePicker.showPicker(); else datePicker?.click(); }
         catch { datePicker?.click(); }
       });
       button.buttonEl.classList.add('finance-capture-calendar-button');
-      button.buttonEl.setAttribute('aria-label', 'Выбрать дату');
+      button.buttonEl.setAttribute('aria-label', ui(plugin, 'capture.pickDate'));
     }).addText((field) => {
       dateInput = field.inputEl;
       field.inputEl.type = 'text';
       field.inputEl.inputMode = 'numeric';
-      field.inputEl.placeholder = 'ДД.ММ.ГГГГ';
+      field.inputEl.placeholder = ui(plugin, 'capture.dateFormat');
       field.inputEl.classList.add('finance-capture-date-input');
-      field.setValue(operation.date.split('-').reverse().join('.')).onChange((value) => {
-        const match = String(value).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-        if (!match) return;
-        const [, day, month, year] = match;
-        const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-        if (parsed.getUTCFullYear() === Number(year) && parsed.getUTCMonth() === Number(month) - 1 && parsed.getUTCDate() === Number(day)) operation.date = `${year}-${month}-${day}`;
+      field.setValue(formatDateInput(operation.date, locale)).onChange((value) => {
+        const parsed = parseDateInput(value, plugin.locale);
+        if (parsed) operation.date = parsed;
       });
     });
     dateSetting.addText((field) => {
@@ -576,85 +827,97 @@ function renderCaptureForm(containerEl, plugin, options = {}) {
       field.inputEl.setAttribute('aria-hidden', 'true');
       field.inputEl.tabIndex = -1;
       field.setValue(operation.date).onChange((value) => {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+        if (!calendarDate(value)) return;
         operation.date = value;
-        dateInput?.setValue?.(value.split('-').reverse().join('.'));
+        if (dateInput) dateInput.value = formatDateInput(value, plugin.locale);
       });
     });
     if (operation.type === 'Расход') {
-      new Setting(containerEl).setName('Необходимость').addDropdown((field) => {
-        lists.necessities.forEach((necessity) => field.addOption(necessity, necessity));
+      new Setting(containerEl).setName(ui(plugin, 'capture.necessity')).addDropdown((field) => {
+        lists.necessities.forEach((necessity) => field.addOption(necessity, necessityLabel(locale, necessity)));
         field.setValue(operation.necessity).onChange((value) => { operation.necessity = value; });
       });
     }
-    new Setting(containerEl).setName('Заметка').addTextArea((field) => field.setValue(operation.notes).onChange((value) => { operation.notes = value; }));
-    new Setting(containerEl).addButton((button) => button.setButtonText('Сохранить операцию').setCta().onClick(async () => {
-      const amount = parseAmountInputValue(operation.amount);
-      if (!(amount > 0)) { new Notice('Укажите сумму больше нуля.'); return; }
-      const visibleDate = dateInput?.value?.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-      if (!visibleDate || operation.date !== `${visibleDate[3]}-${visibleDate[2]}-${visibleDate[1]}`) { new Notice('Введите дату в формате ДД.ММ.ГГГГ или выберите её в календаре.'); return; }
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(operation.date)) { new Notice('Укажите дату.'); return; }
+    new Setting(containerEl).setName(ui(plugin, 'capture.note')).addTextArea((field) => field.setValue(operation.notes).onChange((value) => { operation.notes = value; }));
+    new Setting(containerEl).addButton((button) => button.setButtonText(ui(plugin, 'capture.save')).setCta().onClick(async () => {
+      const amount = parseAmountInputValue(operation.amount, plugin.locale);
+      if (!(amount > 0)) { new Notice(ui(plugin, 'capture.amountPositive')); return; }
+      const visibleDate = parseDateInput(dateInput?.value, plugin.locale);
+      if (!visibleDate || operation.date !== visibleDate) { new Notice(ui(plugin, 'capture.dateInvalid', { format: dateInputPattern(plugin.locale) })); return; }
+      if (!calendarDate(operation.date)) { new Notice(ui(plugin, 'capture.dateMissing')); return; }
       const account = lists.accounts.find((item) => item.id === Number(operation.accountId));
-      if (!account) { new Notice('Выберите синхронизированный счёт.'); return; }
+      if (!account) { new Notice(ui(plugin, 'capture.accountRequired')); return; }
       let destinationAmount = 0;
       if (operation.type === 'Перевод') {
         const destination = lists.accounts.find((item) => item.id === Number(operation.destinationAccountId));
-        if (!destination || destination.id === account.id) { new Notice('Выберите другой счёт назначения.'); return; }
-        destinationAmount = account.currency === destination.currency ? amount : parseAmountInputValue(operation.destinationAmount);
-        if (!(destinationAmount > 0)) { new Notice('Укажите сумму зачисления.'); return; }
+        if (!destination || destination.id === account.id) { new Notice(ui(plugin, 'capture.destinationRequired')); return; }
+        destinationAmount = account.currency === destination.currency ? amount : parseAmountInputValue(operation.destinationAmount, plugin.locale);
+        if (!(destinationAmount > 0)) { new Notice(ui(plugin, 'capture.creditedRequired')); return; }
       }
-      button.setDisabled(true).setButtonText('Сохраняем…');
+      button.setDisabled(true).setButtonText(ui(plugin, 'capture.saving'));
       try {
         const saved = await plugin.saveOperation({ date: operation.date, type: operation.type, category: operation.type === 'Перевод' ? '' : operation.category, amount, currency: account.currency, accountId: Number(operation.accountId), necessity: operation.type === 'Расход' ? operation.necessity : '', notes: operation.notes, destinationAccountId: operation.type === 'Перевод' ? Number(operation.destinationAccountId) : null, destinationAmount });
         if (options.onSaved) options.onSaved(saved);
         else {
           operation = defaultOperation(plugin);
-          render('Операция сохранена. Форма готова для следующей записи.');
+          render('capture.savedReady');
         }
       } catch (error) {
-        new Notice(`Не удалось сохранить: ${error.message}`);
-        button.setDisabled(false).setButtonText('Сохранить операцию');
+        new Notice(ui(plugin, 'capture.saveFailed'));
+        button.setDisabled(false).setButtonText(ui(plugin, 'capture.save'));
       }
     }));
   };
-  const refresh = () => render('Список счетов обновлён из Excel.');
+  const refresh = (messageKey = 'capture.listsUpdated') => render(messageKey);
   plugin.captureFormRefreshers?.add(refresh);
   render();
   return () => plugin.captureFormRefreshers?.delete(refresh);
 }
 
 function renderManagerPanel(containerEl, plugin) {
-  const render = (message = '') => {
+  const render = (messageKey = '', values = {}) => {
     containerEl.empty();
     containerEl.addClass('finance-capture-panel', 'finance-capture-manager');
-    containerEl.createEl('h3', { text: 'Управление мобильными операциями' });
-    containerEl.createEl('p', { cls: 'finance-capture-panel-hint', text: 'Панель удаляет только карточки Finance Capture и ожидающие JSON.' });
-    if (message) containerEl.createEl('div', { cls: 'finance-capture-success', text: message });
+    containerEl.createEl('h3', { text: ui(plugin, 'manager.title') });
+    containerEl.createEl('p', { cls: 'finance-capture-panel-hint', text: ui(plugin, 'manager.hint') });
+    if (messageKey) containerEl.createEl('div', { cls: 'finance-capture-success', text: ui(plugin, messageKey, values) });
 
-    new Setting(containerEl).setName('Архивные записи').setDesc('Карточки без JSON в очереди. Архив сам по себе не подтверждает импорт; смотрите статус квитанции в карточке.')
-      .addButton((button) => button.setButtonText('Удалить архивные записи').onClick(async () => {
+    new Setting(containerEl).setName(ui(plugin, 'manager.archived')).setDesc(ui(plugin, 'manager.archivedDesc'))
+      .addButton((button) => button.setButtonText(ui(plugin, 'manager.deleteArchived')).onClick(async () => {
         const summary = await plugin.getCleanupSummary();
-        if (!summary.archivedCards || !window.confirm(`Удалить архивные карточки: ${summary.archivedCards}?`)) return;
+        if (!summary.archivedCards || !window.confirm(ui(plugin, 'manager.confirmArchived', { count: new Intl.NumberFormat(plugin.locale).format(summary.archivedCards) }))) return;
         button.setDisabled(true);
         const result = await plugin.deleteArchivedRecords();
-        render(`Удалено архивных карточек: ${result.deletedCards}.`);
+        render('manager.deletedArchived', { count: result.deletedCards });
       }));
-    new Setting(containerEl).setName('Все записи').setDesc('Все карточки операций и все ожидающие JSON. Импортированные строки в Excel не удаляются.')
-      .addButton((button) => button.setButtonText('Удалить все записи').setWarning().onClick(async () => {
+    new Setting(containerEl).setName(ui(plugin, 'manager.all')).setDesc(ui(plugin, 'manager.allDesc'))
+      .addButton((button) => button.setButtonText(ui(plugin, 'manager.deleteAll')).setWarning().onClick(async () => {
         const summary = await plugin.getCleanupSummary();
         const total = summary.allCards + summary.pendingJson;
-        if (!total || !window.confirm(`Удалить карточки (${summary.allCards}) и ожидающие JSON (${summary.pendingJson})? Это действие нельзя отменить.`)) return;
+        if (!total || !window.confirm(ui(plugin, 'manager.confirmAll', {
+          cards: new Intl.NumberFormat(plugin.locale).format(summary.allCards),
+          json: new Intl.NumberFormat(plugin.locale).format(summary.pendingJson),
+        }))) return;
         button.setDisabled(true);
         const result = await plugin.deleteAllRecords();
-        render(`Удалено карточек: ${result.deletedCards}; JSON: ${result.deletedJson}.`);
+        render('manager.deletedAll', { cards: result.deletedCards, json: result.deletedJson });
       }));
   };
+  const refresh = () => render();
+  plugin.managerPanelRefreshers.add(refresh);
   render();
+  return () => plugin.managerPanelRefreshers.delete(refresh);
 }
 
 class FinanceCapturePanelChild extends MarkdownRenderChild {
   constructor(plugin, element) { super(element); this.plugin = plugin; }
   onload() { this.dispose = renderCaptureForm(this.containerEl, this.plugin, { inline: true }); }
+  onunload() { this.dispose?.(); this.dispose = null; }
+}
+
+class FinanceCaptureManagerPanelChild extends MarkdownRenderChild {
+  constructor(plugin, element) { super(element); this.plugin = plugin; }
+  onload() { this.dispose = renderManagerPanel(this.containerEl, this.plugin); }
   onunload() { this.dispose?.(); this.dispose = null; }
 }
 
@@ -669,17 +932,30 @@ class FinanceCaptureSettings extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'Finance Capture' });
-    new Setting(containerEl).setName('Автор').setDesc('Латинские буквы, цифры, точка, дефис или подчёркивание.')
+    containerEl.createEl('h2', { text: ui(this.plugin, 'settings.title') });
+    new Setting(containerEl).setName(ui(this.plugin, 'settings.language')).setDesc(`${ui(this.plugin, 'language.description')} ${ui(this.plugin, 'language.reload')}`)
+      .addDropdown((field) => {
+        field.addOption('system', ui(this.plugin, 'language.system'));
+        field.addOption('en', ui(this.plugin, 'language.en'));
+        field.addOption('ru', ui(this.plugin, 'language.ru'));
+        field.setValue(this.plugin.settings.language).onChange(async (value) => {
+          if (!['system', 'en', 'ru'].includes(value)) return;
+          this.plugin.settings.language = value;
+          await this.plugin.saveSettings();
+          this.plugin.refreshLocalizedPanels();
+          this.display();
+        });
+      });
+    new Setting(containerEl).setName(ui(this.plugin, 'settings.author')).setDesc(ui(this.plugin, 'settings.authorDesc'))
       .addText((field) => field.setValue(this.plugin.settings.author).onChange(async (value) => {
         this.plugin.settings.author = value.replace(/[^A-Za-z0-9._-]/g, '-') || 'owner'; await this.plugin.saveSettings();
       }));
-    new Setting(containerEl).setName('Папка Syncthing в хранилище').setDesc('Корневая папка; JSON попадёт в incoming, а карточки — в отдельную подпапку.')
+    new Setting(containerEl).setName(ui(this.plugin, 'settings.syncRoot')).setDesc(ui(this.plugin, 'settings.syncRootDesc'))
       .addText((field) => field.setValue(this.plugin.settings.syncRoot).onChange(async (value) => {
         this.plugin.settings.syncRoot = normalizePath(value || 'Finance Sync'); await this.plugin.saveSettings();
         await this.plugin.refreshMobileLists(); await this.plugin.refreshBalancesSnapshot();
       }));
-    new Setting(containerEl).setName('Подпапка карточек').setDesc('Путь внутри папки Syncthing, например operations.')
+    new Setting(containerEl).setName(ui(this.plugin, 'settings.recordsFolder')).setDesc(ui(this.plugin, 'settings.recordsFolderDesc'))
       .addText((field) => field.setValue(this.plugin.settings.recordsSubfolder).onChange(async (value) => {
         this.plugin.settings.recordsSubfolder = normalizePath(value || 'operations'); await this.plugin.saveSettings();
       }));
@@ -691,10 +967,12 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     this.disposed = false;
     const saved = await this.loadData() || {};
     this.settings = { ...DEFAULT_SETTINGS, ...saved, recordLinks: { ...(saved.recordLinks || {}) } };
+    if (!['system', 'en', 'ru'].includes(this.settings.language)) this.settings.language = 'system';
     this.bulkDeleting = false;
     this.cardStatusSyncQueue = Promise.resolve();
     this.captureFormRefreshers = new Set();
     this.balancePanelRefreshers = new Set();
+    this.managerPanelRefreshers = new Set();
     this.captureLists = normalizeMobileLists(null);
     this.balanceSnapshot = null;
     this.balanceSnapshotState = 'missing';
@@ -705,24 +983,24 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     await this.refreshMobileLists();
     await this.refreshBalancesSnapshot({ notify: false });
     const openCaptureModal = async () => { await this.refreshMobileLists(); new CaptureModal(this.app, this).open(); };
-    this.addRibbonIcon('wallet-cards', 'Добавить финансовую операцию', openCaptureModal);
-    this.addCommand({ id: 'add-finance-operation', name: 'Добавить финансовую операцию', callback: openCaptureModal });
+    this.addRibbonIcon('wallet-cards', ui(this, 'commands.add'), openCaptureModal);
+    this.addCommand({ id: 'add-finance-operation', name: ui(this, 'commands.add'), callback: openCaptureModal });
     this.addCommand({
       id: 'insert-finance-capture-panel',
-      name: 'Вставить панель добавления операции в заметку',
+      name: ui(this, 'commands.insertCapture'),
       editorCallback: (editor) => editor.replaceRange('```finance-capture\n```\n', editor.getCursor()),
     });
     this.addCommand({
       id: 'insert-finance-capture-manager',
-      name: 'Вставить панель управления мобильными операциями',
+      name: ui(this, 'commands.insertManager'),
       editorCallback: (editor) => editor.replaceRange('```finance-capture-manager\n```\n', editor.getCursor()),
     });
     this.addCommand({
       id: 'insert-finance-balances-panel',
-      name: 'Вставить панель общих балансов в заметку',
+      name: ui(this, 'commands.insertBalances'),
       editorCallback: (editor) => editor.replaceRange('```finance-balances\n```\n', editor.getCursor()),
     });
-    this.addCommand({ id: 'show-finance-sync-status', name: 'Показать статус мобильных операций', callback: () => this.showStatus() });
+    this.addCommand({ id: 'show-finance-sync-status', name: ui(this, 'commands.status'), callback: () => this.showStatus() });
     this.registerMarkdownCodeBlockProcessor('finance-capture', async (_source, element, context) => {
       await this.refreshMobileLists();
       if (this.disposed) return;
@@ -730,14 +1008,20 @@ module.exports = class FinanceCapturePlugin extends Plugin {
       if (context?.addChild) context.addChild(child);
       else child.onload();
     });
-    this.registerMarkdownCodeBlockProcessor('finance-capture-manager', (_source, element) => renderManagerPanel(element, this));
+    this.registerMarkdownCodeBlockProcessor('finance-capture-manager', (_source, element, context) => {
+      const child = new FinanceCaptureManagerPanelChild(this, element);
+      if (context?.addChild) context.addChild(child);
+      else child.onload();
+    });
     this.registerMarkdownCodeBlockProcessor('finance-balances', async (_source, element, context) => {
       await this.refreshBalancesSnapshot({ notify: false });
       const child = new FinanceBalancesPanelChild(this, element);
       if (context?.addChild) context.addChild(child);
       else child.onload();
     });
-    this.registerEvent(this.app.vault.on('delete', (file) => Promise.all([this.onVaultDelete(file), this.onListsFileChanged(file.path), this.onBalancesFileChanged(file.path)]).catch((error) => new Notice(`Ошибка Finance Capture: ${error.message}`))));
+    this.registerEvent(this.app.vault.on('delete', (file) => Promise.all([
+      this.onVaultDelete(file), this.onListsFileChanged(file.path), this.onBalancesFileChanged(file.path),
+    ]).catch(() => new Notice(ui(this, 'error.background')))));
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
       this.onSyncFileArrived(file.path, oldPath);
       return Promise.all([this.onVaultRename(file, oldPath), this.onListsFileChanged(file.path, oldPath), this.onBalancesFileChanged(file.path, oldPath)]).catch(() => {});
@@ -754,7 +1038,17 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     await this.queueCardStatusSync();
   }
 
+  get locale() { return resolveLocale(this.settings?.language || 'system'); }
+
   async saveSettings() { await this.saveData(this.settings); }
+
+  refreshLocalizedPanels() {
+    this.refreshCaptureForms('');
+    this.refreshBalancePanels();
+    for (const refresh of this.managerPanelRefreshers) {
+      try { refresh(); } catch { this.managerPanelRefreshers.delete(refresh); }
+    }
+  }
 
   listsPath() { return normalizePath(`${this.settings.syncRoot}/config/lists.json`); }
 
@@ -902,29 +1196,29 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     if (!file) {
       this.captureLists = normalizeMobileLists(null);
       try { await this.syncCardCategoryEmojis(); }
-      catch { new Notice('Справочники недоступны, имена карточек не обновлены.'); }
+      catch { new Notice(ui(this, 'error.listsUnavailable')); }
       this.refreshCaptureForms();
       return false;
     }
     let lists;
     try {
       lists = normalizeMobileLists(JSON.parse(await (this.app.vault.read ? this.app.vault.read(file) : this.app.vault.cachedRead(file))));
-    } catch (error) {
-      new Notice(`Справочники не приняты: ${error.message}`);
+    } catch {
+      new Notice(ui(this, 'error.listsInvalid'));
       this.captureLists = normalizeMobileLists(null);
       this.refreshCaptureForms();
       return false;
     }
     this.captureLists = lists;
     try { await this.syncCardCategoryEmojis(); }
-    catch { new Notice('Справочники приняты, но имена карточек не обновлены.'); }
+    catch { new Notice(ui(this, 'error.listsNotUpdated')); }
     this.refreshCaptureForms();
     return true;
   }
 
-  refreshCaptureForms() {
+  refreshCaptureForms(messageKey = 'capture.listsUpdated') {
     for (const refresh of this.captureFormRefreshers) {
-      try { refresh(); } catch { this.captureFormRefreshers.delete(refresh); }
+      try { refresh(messageKey); } catch { this.captureFormRefreshers.delete(refresh); }
     }
   }
 
@@ -989,7 +1283,7 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     const event = { schema: 1, id, author, createdAt: new Date().toISOString(), operation };
     const temporaryPath = `${incoming}/${id}.pending`;
     const jsonPath = `${incoming}/${id}.json`;
-    const baseName = recordNameWithStatus(recordBaseName(operation, this.captureLists), true);
+    const baseName = recordNameWithStatus(recordBaseName(operation, this.captureLists), true, this.locale);
     let recordPath = `${records}/${baseName}.md`;
     let temporaryFile;
     try {
@@ -1007,13 +1301,13 @@ module.exports = class FinanceCapturePlugin extends Plugin {
       await ensureFolder(this.app.vault, records);
       if (this.app.vault.getAbstractFileByPath(recordPath)) recordPath = `${records}/${baseName} — ${id.slice(-8)}.md`;
       if (this.app.vault.getAbstractFileByPath(recordPath)) recordPath = `${records}/${baseName} — ${id}.md`;
-      await this.app.vault.create(recordPath, operationMarkdown(event, jsonPath, this.captureLists));
+      await this.app.vault.create(recordPath, operationMarkdown(event, jsonPath, this.captureLists, this.locale));
       cardCreated = true;
       this.settings.recordLinks[recordPath] = { id, jsonPath };
-      await this.saveSettings().catch((error) => new Notice(`Карточка создана, но её связь не записана в настройках: ${error.message}`));
-      new Notice('Операция и карточка сохранены на телефоне.');
-    } catch (error) {
-      new Notice(`Операция сохранена, но карточку создать не удалось: ${error.message}`);
+      await this.saveSettings().catch(() => new Notice(ui(this, 'error.cardSettings')));
+      new Notice(ui(this, 'notice.saved'));
+    } catch {
+      new Notice(ui(this, 'error.cardCreate'));
     }
     return { id, jsonPath, recordPath: cardCreated ? recordPath : null, cardCreated };
   }
@@ -1040,7 +1334,7 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     if (queued) {
       await this.app.vault.delete(queued);
       this.schedulePendingBalanceRefresh();
-      new Notice('Карточка удалена, ожидающая операция отменена.');
+      new Notice(ui(this, 'notice.cardDeleted'));
     }
     delete this.settings.recordLinks[file.path];
     await this.saveSettings();
@@ -1088,7 +1382,9 @@ module.exports = class FinanceCapturePlugin extends Plugin {
   }
 
   async setCardStatus(card, pending) {
-    const desiredPath = recordPathWithStatus(card.recordPath, pending);
+    const markdown = await this.app.vault.cachedRead(card.file);
+    const locale = resolveLocale(frontmatterValue(markdown, 'finance_locale') || 'ru');
+    const desiredPath = recordPathWithStatus(card.recordPath, pending, locale);
     if (desiredPath === card.recordPath) return false;
     let targetPath = desiredPath;
     const occupied = this.app.vault.getAbstractFileByPath(targetPath);
@@ -1108,6 +1404,7 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     clearTimeout(this.pendingBalanceRefreshTimeout);
     this.captureFormRefreshers?.clear();
     this.balancePanelRefreshers?.clear();
+    this.managerPanelRefreshers?.clear();
   }
 
   onSyncFileArrived(filePath, oldPath = '') {
@@ -1135,7 +1432,7 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     clearTimeout(this.cardStatusSyncTimeout);
     this.cardStatusSyncTimeout = setTimeout(() => {
       this.cardStatusSyncTimeout = null;
-      this.queueCardStatusSync().catch((error) => new Notice(`Ошибка обновления статусов Finance Capture: ${error.message}`));
+      this.queueCardStatusSync().catch(() => new Notice(ui(this, 'error.cardStatus')));
     }, 500);
     this.cardStatusSyncTimeout?.unref?.();
   }
@@ -1153,19 +1450,20 @@ module.exports = class FinanceCapturePlugin extends Plugin {
       const pending = Boolean(this.app.vault.getAbstractFileByPath(card.jsonPath));
       if (this.disposed) return changed;
       if (await this.setCardStatus(card, pending)) changed = true;
-      let status = pending ? 'В очереди. Подтверждения обработки пока нет.' : 'Архив: JSON отсутствует. Импорт не подтверждён.';
+      const markdown = await this.app.vault.cachedRead(card.file);
+      const locale = resolveLocale(frontmatterValue(markdown, 'finance_locale') || 'ru');
+      let status = translate(locale, pending ? 'card.pending' : 'card.archived');
       const receiptFile = this.app.vault.getAbstractFileByPath(`${this.settings.syncRoot}/receipts/${card.id}.json`);
       if (receiptFile) {
         try {
           const receipt = JSON.parse(await this.app.vault.cachedRead(receiptFile));
           if (receipt.schema === 1 && receipt.id === card.id) {
-            if (receipt.status === 'imported' && timestamp(receipt.importedAt)) status = `Импорт подтверждён компьютером: ${receipt.importedAt}.${pending ? ' JSON ещё находится в очереди синхронизации.' : ''}`;
-            else if (receipt.status === 'discarded' && timestamp(receipt.importedAt)) status = 'Отклонено компьютером после сброса/восстановления. Не добавлено в Excel.';
-            else if (receipt.status === 'error') status = 'Ошибка обработки на компьютере. Проверьте очередь в desktop-приложении.';
+            if (receipt.status === 'imported' && timestamp(receipt.importedAt)) status = translate(locale, pending ? 'card.importedPending' : 'card.imported', { date: formatTimestamp(receipt.importedAt, locale) });
+            else if (receipt.status === 'discarded' && timestamp(receipt.importedAt)) status = translate(locale, 'card.discarded');
+            else if (receipt.status === 'error') status = translate(locale, 'card.importError');
           }
         } catch { /* Partial receipts never prove success. */ }
       }
-      const markdown = await this.app.vault.cachedRead(card.file);
       const block = `<!-- finance-status:start -->\n> ${status}\n<!-- finance-status:end -->`;
       const updated = /<!-- finance-status:start -->[\s\S]*?<!-- finance-status:end -->/.test(markdown)
         ? markdown.replace(/<!-- finance-status:start -->[\s\S]*?<!-- finance-status:end -->/, () => block)
@@ -1183,7 +1481,7 @@ module.exports = class FinanceCapturePlugin extends Plugin {
       const markdown = await this.app.vault.cachedRead(card.file);
       let category = frontmatterValue(markdown, 'finance_category');
       if (!category) {
-        const displayed = markdown.match(/^\| Категория \| (.+?) \|$/m)?.[1]?.replace(/\\\|/g, '|').trim() || '';
+        const displayed = markdown.match(/^\| (?:Категория|Category) \| (.+?) \|$/m)?.[1]?.replace(/\\\|/g, '|').trim() || '';
         category = Object.values(this.captureLists.categories).flat().find((name) => displayed === name || displayed.endsWith(` ${name}`)) || '';
       }
       if (!category) continue;
@@ -1268,10 +1566,19 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     const files = this.app.vault.getFiles();
     const operations = files.filter((file) => file.path.startsWith(incomingPrefix) && file.extension === 'json').length;
     const receipts = files.filter((file) => file.path.startsWith(receiptPrefix) && file.extension === 'json').length;
-    new Notice(`Ожидают импорта: ${operations}. Получено квитанций: ${receipts}.`);
+    new Notice(ui(this, 'status.message', {
+      operations: new Intl.NumberFormat(this.locale).format(operations),
+      receipts: new Intl.NumberFormat(this.locale).format(receipts),
+    }));
   }
 };
 
 module.exports.formatAmountInputValue = formatAmountInputValue;
 module.exports.parseAmountInputValue = parseAmountInputValue;
 module.exports.configureAmountInput = configureAmountInput;
+module.exports.resolveLocale = resolveLocale;
+module.exports.translate = translate;
+module.exports.localeMessages = UI_TEXT;
+module.exports.operationCount = operationCount;
+module.exports.formatDateInput = formatDateInput;
+module.exports.parseDateInput = parseDateInput;
