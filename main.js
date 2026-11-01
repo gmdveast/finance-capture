@@ -337,6 +337,30 @@ function parseAmountInputValue(value, locale = 'ru') {
   return Number(normalized);
 }
 
+function normalizeAmountInputValue(value, locale = 'ru') {
+  const { whole, fraction, hasDecimal } = amountInputParts(value, -1, false, locale);
+  if (!whole && !fraction && !hasDecimal) return '';
+  return `${whole || '0'}${hasDecimal ? `.${fraction}` : ''}`;
+}
+
+function formatCanonicalAmountInputValue(value, locale = 'ru') {
+  const source = String(value ?? '');
+  if (!source || !/^\d*(?:\.\d*)?$/.test(source)) return '';
+  const hasDecimal = source.includes('.');
+  const [rawWhole, fraction = ''] = source.split('.');
+  const whole = rawWhole.replace(/^0+(?=\d)/, '');
+  if (!whole && !fraction && !hasDecimal) return '';
+  const { group, decimal } = amountSeparators(locale);
+  const integer = (whole || (hasDecimal ? '0' : '')).replace(/\B(?=(\d{3})+(?!\d))/g, group);
+  return `${integer}${hasDecimal ? `${decimal}${fraction}` : ''}`;
+}
+
+function parseCanonicalAmountInputValue(value) {
+  const source = String(value ?? '');
+  if (!/^\d+(?:\.\d*)?$/.test(source)) return NaN;
+  return Number(source);
+}
+
 function amountInputCaret(value, caret, formatted, locale = 'ru') {
   if (!Number.isInteger(caret)) return formatted.length;
   const { decimal } = amountSeparators(locale);
@@ -375,7 +399,9 @@ function configureAmountInput(field, value, onChange, locale = 'ru') {
     input.value = formatted;
     if (Number.isInteger(caret)) input.setSelectionRange?.(nextCaret, nextCaret);
   });
-  field.setValue(formatAmountInputValue(value, -1, false, locale)).onChange(onChange);
+  field.setValue(formatCanonicalAmountInputValue(value, locale)).onChange((displayValue) => {
+    onChange(normalizeAmountInputValue(displayValue, locale));
+  });
 }
 
 const DEFAULT_SETTINGS = {
@@ -776,7 +802,7 @@ function renderCaptureForm(containerEl, plugin, options = {}) {
         operation.amount = value;
         if (sameCurrencyTransfer) {
           operation.destinationAmount = value;
-          destinationField?.setValue(value);
+          destinationField?.setValue(formatCanonicalAmountInputValue(value, locale));
         }
       }, locale);
       if (options.focusAmount) window.setTimeout(() => field.inputEl.focus(), 0);
@@ -840,7 +866,7 @@ function renderCaptureForm(containerEl, plugin, options = {}) {
     }
     new Setting(containerEl).setName(ui(plugin, 'capture.note')).addTextArea((field) => field.setValue(operation.notes).onChange((value) => { operation.notes = value; }));
     new Setting(containerEl).addButton((button) => button.setButtonText(ui(plugin, 'capture.save')).setCta().onClick(async () => {
-      const amount = parseAmountInputValue(operation.amount, plugin.locale);
+      const amount = parseCanonicalAmountInputValue(operation.amount);
       if (!(amount > 0)) { new Notice(ui(plugin, 'capture.amountPositive')); return; }
       const visibleDate = parseDateInput(dateInput?.value, plugin.locale);
       if (!visibleDate || operation.date !== visibleDate) { new Notice(ui(plugin, 'capture.dateInvalid', { format: dateInputPattern(plugin.locale) })); return; }
@@ -851,7 +877,7 @@ function renderCaptureForm(containerEl, plugin, options = {}) {
       if (operation.type === 'Перевод') {
         const destination = lists.accounts.find((item) => item.id === Number(operation.destinationAccountId));
         if (!destination || destination.id === account.id) { new Notice(ui(plugin, 'capture.destinationRequired')); return; }
-        destinationAmount = account.currency === destination.currency ? amount : parseAmountInputValue(operation.destinationAmount, plugin.locale);
+        destinationAmount = account.currency === destination.currency ? amount : parseCanonicalAmountInputValue(operation.destinationAmount);
         if (!(destinationAmount > 0)) { new Notice(ui(plugin, 'capture.creditedRequired')); return; }
       }
       button.setDisabled(true).setButtonText(ui(plugin, 'capture.saving'));
@@ -1576,6 +1602,9 @@ module.exports = class FinanceCapturePlugin extends Plugin {
 module.exports.formatAmountInputValue = formatAmountInputValue;
 module.exports.parseAmountInputValue = parseAmountInputValue;
 module.exports.configureAmountInput = configureAmountInput;
+module.exports.normalizeAmountInputValue = normalizeAmountInputValue;
+module.exports.formatCanonicalAmountInputValue = formatCanonicalAmountInputValue;
+module.exports.parseCanonicalAmountInputValue = parseCanonicalAmountInputValue;
 module.exports.resolveLocale = resolveLocale;
 module.exports.translate = translate;
 module.exports.localeMessages = UI_TEXT;
