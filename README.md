@@ -61,4 +61,6 @@ The plugin uses Obsidian's vault APIs and makes no network requests. It does not
 
 The plugin works on Obsidian mobile and desktop. It does not write to the Finance workbook, install itself, or update Finance desktop. Obsidian manages plugin updates independently from the desktop app.
 
+Manual captures continue to use operation schema 1. The plugin also recognizes valid automatic-operation schema 2 files in the shared queue for pending-balance forecasts, card archiving, cancellation of a still-pending linked event, and reset cleanup. Unknown fields and malformed schema 2 events are excluded from forecasts and retained during cleanup.
+
 The release consists of `main.js`, `manifest.json`, and `styles.css`; no build step is required. See the [source repository](https://github.com/gmdveast/finance-capture) for development. Report problems through [GitHub Issues](https://github.com/gmdveast/finance-capture/issues). License: [MIT](LICENSE).

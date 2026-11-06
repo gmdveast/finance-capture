@@ -530,9 +530,64 @@ function formatSignedBalanceAmount(amount, currency, locale = 'ru') {
   return `${sign}${formatBalanceAmount(Math.abs(stableAmount), currency, locale)}`;
 }
 
+const AUTOMATIC_EVENT_FIELDS = new Set(['schema', 'id', 'author', 'createdAt', 'automation', 'operation']);
+const AUTOMATIC_OPERATION_FIELDS = new Set(['date', 'type', 'category', 'amount', 'currency', 'rate', 'necessity', 'notes', 'accountId', 'destinationAccountId', 'destinationAmount']);
+
+function validAutomaticOperationEvent(event, expectedId) {
+  try {
+    object(event);
+    object(event.automation);
+    object(event.operation);
+    if (event.schema !== 2 || event.id !== expectedId || !/^[A-Za-z0-9][A-Za-z0-9._-]{5,127}$/.test(event.id)
+      || Object.keys(event).some((key) => !AUTOMATIC_EVENT_FIELDS.has(key))
+      || Object.keys(event.operation).some((key) => !AUTOMATIC_OPERATION_FIELDS.has(key))
+      || !textField(event.author, 80, 'author') || !timestamp(event.createdAt)) return false;
+
+    const { connectorId, profileId } = event.automation;
+    if (Object.keys(event.automation).some((key) => !['connectorId', 'profileId'].includes(key))
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(textField(connectorId, 64, 'connectorId'))
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(textField(profileId, 64, 'profileId'))) return false;
+
+    const operation = event.operation;
+    if (!calendarDate(operation.date) || !['Доход', 'Расход', 'Перевод'].includes(operation.type)
+      || !Number.isInteger(operation.accountId) || operation.accountId < 5 || operation.accountId > 104
+      || typeof operation.currency !== 'string' || !/^[A-Z]{3}$/.test(operation.currency)
+      || typeof operation.amount !== 'number') return false;
+    numberField(operation.amount, { positive: true });
+    if (operation.rate !== undefined) {
+      if (typeof operation.rate !== 'number') return false;
+      rateField(operation.rate);
+    }
+    for (const [field, max] of [['category', 100], ['necessity', 100], ['notes', 500]]) {
+      if (operation[field] !== undefined) textField(operation[field], max, field);
+    }
+    if (operation.type !== 'Перевод' && !textField(operation.category, 100, 'category')) return false;
+
+    if (operation.destinationAccountId !== undefined && operation.destinationAccountId !== null
+      && (!Number.isInteger(operation.destinationAccountId) || operation.destinationAccountId < 5 || operation.destinationAccountId > 104)) return false;
+    if (operation.destinationAmount !== undefined) {
+      if (typeof operation.destinationAmount !== 'number') return false;
+      numberField(operation.destinationAmount, { min: 0 });
+    }
+    if (operation.type === 'Перевод') {
+      if (!Number.isInteger(operation.destinationAccountId) || operation.destinationAccountId < 5 || operation.destinationAccountId > 104
+        || operation.destinationAccountId === operation.accountId || typeof operation.destinationAmount !== 'number') return false;
+      numberField(operation.destinationAmount, { positive: true });
+    }
+    return true;
+  } catch { return false; }
+}
+
+function validQueuedOperationEvent(event, id) {
+  if (event?.schema === 2) return validAutomaticOperationEvent(event, id);
+  const operation = event?.operation;
+  return event?.schema === 1 && event.id === id && operation && typeof operation === 'object' && !Array.isArray(operation)
+    && event.automation === undefined && operation.automation === undefined;
+}
+
 function validBalanceForecastOperation(event, id) {
   const operation = event?.operation;
-  if (event?.schema !== 1 || event.id !== id || !operation || typeof operation !== 'object'
+  if (!validQueuedOperationEvent(event, id)
     || !calendarDate(operation.date) || !['Доход', 'Расход', 'Перевод'].includes(operation.type)
     || !Number.isInteger(operation.accountId) || operation.accountId < 5 || operation.accountId > 104
     || typeof operation.currency !== 'string' || !/^[A-Z]{3}$/.test(operation.currency)
@@ -1274,6 +1329,12 @@ module.exports = class FinanceCapturePlugin extends Plugin {
         if (!normalizePath(card.jsonPath).startsWith(incomingPrefix)) continue;
         const markdown = await this.app.vault.cachedRead(card.file);
         if (!/^finance_capture:\s*true$/m.test(markdown) || !old(card.id, frontmatterValue(markdown, 'created_at'))) continue;
+        const queuedJson = this.app.vault.getAbstractFileByPath(card.jsonPath);
+        if (queuedJson?.extension === 'json') {
+          let queuedEvent;
+          try { queuedEvent = JSON.parse(await this.app.vault.cachedRead(queuedJson)); } catch { continue; }
+          if (!validQueuedOperationEvent(queuedEvent, card.id)) continue;
+        }
         await this.app.vault.delete(card.file);
         delete this.settings.recordLinks[card.recordPath];
       }
@@ -1281,7 +1342,7 @@ module.exports = class FinanceCapturePlugin extends Plugin {
         if (!candidate.path.startsWith(incomingPrefix) || !['json', 'pending'].includes(candidate.extension)) continue;
         let event;
         try { event = JSON.parse(await this.app.vault.cachedRead(candidate)); } catch { continue; }
-        if (event.schema === 1 && event.operation && this.validQueuePath(event.id, candidate.path.replace(/\.pending$/, '.json')) && old(event.id, event.createdAt)) await this.app.vault.delete(candidate);
+        if (validQueuedOperationEvent(event, event?.id) && this.validQueuePath(event.id, candidate.path.replace(/\.pending$/, '.json')) && old(event.id, event.createdAt)) await this.app.vault.delete(candidate);
       }
       await this.saveSettings();
       this.schedulePendingBalanceRefresh();
@@ -1408,7 +1469,7 @@ module.exports = class FinanceCapturePlugin extends Plugin {
     if (!file || file.extension !== 'json') return null;
     try {
       const event = JSON.parse(await (this.app.vault.read ? this.app.vault.read(file) : this.app.vault.cachedRead(file)));
-      return event.schema === 1 && event.id === id && event.operation && typeof event.operation === 'object' ? file : null;
+      return validQueuedOperationEvent(event, id) ? file : null;
     } catch { return null; }
   }
 
